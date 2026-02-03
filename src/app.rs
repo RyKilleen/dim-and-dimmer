@@ -1,9 +1,31 @@
 use std::collections::HashMap;
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
+
+use eframe::egui;
 
 use crate::commands::command_exists;
-use crate::ddc::{read_vcp, VCP_BRIGHTNESS, VCP_CONTRAST};
-use crate::display::{enumerate_displays, Display};
+use crate::ddc::{VCP_BRIGHTNESS, VCP_CONTRAST, read_vcp};
+use crate::display::{Display, enumerate_displays};
 use crate::gamma::{self, GammaBackend, map_drm_to_xrandr};
+
+pub enum InitState {
+    Pending, // Not started yet (no ctx available)
+    Loading, // Thread spawned, waiting for result
+    Ready,
+    Failed(String),
+}
+
+#[derive(Default)]
+pub struct InitResult {
+    pub ddcutil_available: bool,
+    pub displays: Vec<Display>,
+    pub gamma_backend: Option<Box<dyn GammaBackend>>,
+    pub gamma_output_map: HashMap<String, String>,
+    pub brightness: u8,
+    pub contrast: u8,
+    pub error: Option<String>,
+}
 
 pub struct App {
     pub displays: Vec<Display>,
@@ -19,11 +41,14 @@ pub struct App {
 
     pub status: Option<String>,
     pub error: Option<String>,
+
+    pub init_state: InitState,
+    pub init_receiver: Option<Receiver<InitResult>>,
 }
 
 impl App {
     pub fn new() -> Self {
-        let mut app = Self {
+        Self {
             displays: Vec::new(),
             selected_display: 0,
             brightness: 50,
@@ -34,27 +59,64 @@ impl App {
             gamma_output_map: HashMap::new(),
             status: None,
             error: None,
-        };
+            init_state: InitState::Pending,
+            init_receiver: None,
+        }
+    }
+
+    pub fn start_init(&mut self, ctx: egui::Context) {
+        let (tx, rx) = mpsc::channel();
+        self.init_receiver = Some(rx);
+        self.init_state = InitState::Loading;
+
+        thread::spawn(move || {
+            let result = Self::init_blocking();
+            let _ = tx.send(result);
+            ctx.request_repaint(); // Wake UI exactly once
+        });
+    }
+
+    fn init_blocking() -> InitResult {
+        let mut result = InitResult::default();
 
         if !command_exists("ddcutil", &["--version"]) {
-            app.error = Some("ddcutil not found. Install with: sudo apt install ddcutil".into());
-            return app;
+            result.error = Some("ddcutil not found. Install with: sudo apt install ddcutil".into());
+            return result;
         }
 
-        app.ddcutil_available = true;
-        app.gamma_backend = gamma::create_backend();
+        result.ddcutil_available = true;
+        result.gamma_backend = gamma::create_backend();
+        result.displays = enumerate_displays();
 
-        app.displays = enumerate_displays();
+        // Build gamma output map
+        if let Some(ref backend) = result.gamma_backend {
+            if let Ok(xrandr_outputs) = backend.enumerate_outputs() {
+                for display in &result.displays {
+                    if let Some(xrandr_name) =
+                        map_drm_to_xrandr(&display.drm_connector, &xrandr_outputs)
+                    {
+                        result
+                            .gamma_output_map
+                            .insert(display.id.clone(), xrandr_name);
+                    }
+                }
+            }
+        }
 
-        app.build_gamma_output_map();
-
-        if app.displays.is_empty() {
-            app.error = Some("No displays found. Try running: sudo ddcutil detect".into());
+        if result.displays.is_empty() {
+            result.error = Some("No displays found. Try running: sudo ddcutil detect".into());
         } else {
-            app.refresh_values();
+            // Read initial values from first display
+            let display_id = &result.displays[0].id;
+            if let Some(v) = read_vcp(display_id, VCP_BRIGHTNESS) {
+                result.brightness = v;
+            }
+            if let Some(v) = read_vcp(display_id, VCP_CONTRAST) {
+                result.contrast = v;
+            }
         }
 
-        app
+        result
     }
 
     pub fn display_id(&self) -> &str {
@@ -62,22 +124,13 @@ impl App {
     }
 
     pub fn gamma_output(&self) -> Option<&str> {
-        self.gamma_output_map.get(self.display_id()).map(|s| s.as_str())
+        self.gamma_output_map
+            .get(self.display_id())
+            .map(|s| s.as_str())
     }
 
     pub fn gamma_available(&self) -> bool {
         self.gamma_backend.is_some() && self.gamma_output().is_some()
-    }
-
-    fn build_gamma_output_map(&mut self) {
-        let Some(ref backend) = self.gamma_backend else { return };
-        let Ok(xrandr_outputs) = backend.enumerate_outputs() else { return };
-
-        for display in &self.displays {
-            if let Some(xrandr_name) = map_drm_to_xrandr(&display.drm_connector, &xrandr_outputs) {
-                self.gamma_output_map.insert(display.id.clone(), xrandr_name);
-            }
-        }
     }
 
     pub fn refresh_values(&mut self) {
