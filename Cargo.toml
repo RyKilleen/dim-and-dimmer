@@ -1,8 +1,13 @@
 [package]
 name = "dim-and-dimmer"
-version = "0.1.0"
+version = "0.0.2"
 edition = "2024"
 license = "MIT"
+description = "Control external monitor brightness/contrast via DDC-CI"
+repository = "https://github.com/rykilleen/dim-and-dimmer"
+keywords = ["monitor", "brightness", "ddc", "gui"]
+categories = ["gui", "hardware-support"]
+readme = "README.md"
 
 [dependencies]
 eframe = "0.33"

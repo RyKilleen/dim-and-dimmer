@@ -3,7 +3,7 @@ use std::ops::RangeInclusive;
 use eframe::egui;
 
 use crate::app::{App, InitState};
-use crate::ddc::{set_vcp, VCP_BRIGHTNESS, VCP_CONTRAST};
+use crate::ddc::{VCP_BRIGHTNESS, VCP_CONTRAST, set_vcp};
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -40,7 +40,6 @@ impl eframe::App for App {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Monitor Control (Linux / ddcutil)");
             ui.add_space(10.0);
 
             match &self.init_state {
@@ -52,7 +51,10 @@ impl eframe::App for App {
                     // No request_repaint() here - thread will wake us
                 }
                 InitState::Failed(err) => {
-                    ui.colored_label(egui::Color32::RED, format!("Initialization failed: {}", err));
+                    ui.colored_label(
+                        egui::Color32::RED,
+                        format!("Initialization failed: {}", err),
+                    );
                 }
                 InitState::Ready => {
                     show_main_ui(self, ui);
@@ -136,12 +138,7 @@ fn show_main_ui(app: &mut App, ui: &mut egui::Ui) {
     messages(app, ui);
 }
 
-fn slider(
-    ui: &mut egui::Ui,
-    label: &str,
-    value: &mut u8,
-    range: RangeInclusive<u8>,
-) -> Option<u8> {
+fn slider(ui: &mut egui::Ui, label: &str, value: &mut u8, range: RangeInclusive<u8>) -> Option<u8> {
     ui.label(label);
 
     let mut temp = *value;

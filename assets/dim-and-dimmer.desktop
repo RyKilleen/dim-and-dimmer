@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Dim and Dimmer
+Comment=Control external monitor brightness and contrast
+Exec=dim-and-dimmer
+Icon=dim-and-dimmer
+Terminal=false
+Type=Application
+Categories=Utility;Settings;HardwareSettings;
+Keywords=monitor;brightness;contrast;ddc;display;
+StartupNotify=true

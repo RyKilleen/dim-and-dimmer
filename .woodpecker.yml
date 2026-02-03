@@ -1,0 +1,41 @@
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+variables:
+  - &rust_image "rust:1.93"
+
+steps:
+  - name: build-x86_64
+    image: *rust_image
+    commands:
+      - rustup target add x86_64-unknown-linux-gnu
+      - cargo build --release --target x86_64-unknown-linux-gnu
+      - mv target/x86_64-unknown-linux-gnu/release/dim-and-dimmer dim-and-dimmer-linux-x86_64
+
+  - name: build-aarch64
+    image: *rust_image
+    commands:
+      - apt-get update && apt-get install -y gcc-aarch64-linux-gnu
+      - rustup target add aarch64-unknown-linux-gnu
+      - |
+        cat >> .cargo/config.toml << EOF
+        [target.aarch64-unknown-linux-gnu]
+        linker = "aarch64-linux-gnu-gcc"
+        EOF
+      - mkdir -p .cargo
+      - cargo build --release --target aarch64-unknown-linux-gnu
+      - mv target/aarch64-unknown-linux-gnu/release/dim-and-dimmer dim-and-dimmer-linux-aarch64
+
+  - name: release
+    image: woodpeckerci/plugin-gitea-release
+    settings:
+      base_url: https://codeberg.org
+      api_key:
+        from_secret: codeberg_token
+      files:
+        - dim-and-dimmer-linux-x86_64
+        - dim-and-dimmer-linux-aarch64
+      title: ${CI_COMMIT_TAG}
+    when:
+      event: tag
