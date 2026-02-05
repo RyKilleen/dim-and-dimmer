@@ -16,7 +16,7 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "Monitor Control",
+        "DimAndDimmer",
         options,
         Box::new(|_cc| Ok(Box::new(App::new()))),
     )
